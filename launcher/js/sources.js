@@ -163,7 +163,7 @@ window.Sources = (function () {
         cont.push(c.it);
       });
 
-      // Watchlist: plan to watch, in a shuffled order that changes every few hours
+      // Watchlist: plan to watch, in a shuffled order that changes every hour
       // (steady in between, so it doesn't move while you browse). The whole list
       // is shuffled, so titles from deep in it come round too.
       var next = [];
@@ -191,25 +191,31 @@ window.Sources = (function () {
       }), 4).then(function (details) {
         shown.forEach(function (it, i) { dress(it, details[i]); });
 
-        // Recommended: what SIMKL users pair with the three most recent titles.
-        var seeds = [], recs = [];
-        shown.forEach(function (it, i) { if (seeds.length < 3 && details[i] && details[i].recs.length) seeds.push({ it: it, d: details[i] }); });
-        var round = 0, added = true;
-        while (recs.length < 15 && added) {
-          added = false;
-          seeds.forEach(function (s) {
-            var r = s.d.recs[round];
-            if (!r) return;
-            added = true;
+        // Recommended: what SIMKL users pair with titles you're watching (up to six
+        // from Continue watching; Watchlist titles only to make up the numbers).
+        // The whole pool is shuffled each hour, as the Watchlist is, then 15 shown.
+        var seeds = [];
+        var addSeeds = function (from, how) {
+          from.forEach(function (it) {
+            var d = details[shown.indexOf(it)];
+            if (seeds.length < 6 && d && d.recs.length) seeds.push({ it: it, d: d, how: how });
+          });
+        };
+        addSeeds(cont, "watched");
+        if (seeds.length < 3) addSeeds(next, "watchlist");
+        var pool = [];
+        seeds.forEach(function (sd) {
+          sd.d.recs.forEach(function (r) {
             var key = idKey(r.ids);
             if (!key || seen[key]) return;
             seen[key] = true;
             var it = baseItem(r, kindOf(r.type));
-            it.note = "Because you watched " + s.it.title;
-            recs.push(it);
+            it.note = sd.how === "watched" ? "Because you watched " + sd.it.title : "Because " + sd.it.title + " is on your watchlist";
+            pool.push(it);
           });
-          round++;
-        }
+        });
+        // A different seed from the Watchlist's, so the two rows don't move in step.
+        var recs = shuffle(pool, shuffleBucket() + 7919).slice(0, 15);
         return Simkl.pool(recs.map(function (it) {
           return function () { return Simkl.detail(it.kindSimkl, it.simkl); };
         }), 4).then(function (rd) {
@@ -239,7 +245,7 @@ window.Sources = (function () {
   }
 
   /* ---------- Watchlist shuffle ---------- */
-  var SHUFFLE_HOURS = 3;
+  var SHUFFLE_HOURS = 1;
   function shuffleBucket() { return Math.floor(Date.now() / (SHUFFLE_HOURS * 3600 * 1000)); }
   // Fisher-Yates with a small seeded generator (mulberry32): same seed, same order.
   function shuffle(list, seed) {

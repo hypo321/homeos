@@ -1,0 +1,9 @@
+#!/bin/sh
+# webosbrew boot hook: start the HomeOS Nuvio link helper (127.0.0.1:8097).
+# No dot in this file's name: BusyBox run-parts skips names with one.
+# Remove this file and /var/lib/homeos to uninstall.
+[ -x /usr/bin/node ] || exit 0
+[ -f /var/lib/homeos/nuvio-link.js ] || exit 0
+pgrep -f /var/lib/homeos/nuvio-link.js >/dev/null 2>&1 && exit 0
+nohup /usr/bin/node /var/lib/homeos/nuvio-link.js >>/tmp/homeos-nuvio-link.log 2>&1 </dev/null &
+exit 0

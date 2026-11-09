@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HomeOS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/launcher.css">
+</head>
+<body class="tod-evening">
+  <div id="stage">
+    <div class="backdrop" aria-hidden="true">
+      <div class="bd-layer" id="bdA"></div>
+      <div class="bd-layer" id="bdB"></div>
+      <div class="scrim"></div>
+      <div class="tint"></div>
+    </div>
+
+    <header class="topbar">
+      <div class="clock"><span class="time" id="time"></span></div>
+    </header>
+
+    <section class="hero" id="hero" aria-live="polite">
+      <div class="eyebrow" id="heroEyebrow"></div>
+      <h1 class="hero-title" id="heroTitle"></h1>
+      <div class="hero-meta" id="heroMeta"></div>
+      <p class="hero-synopsis" id="heroSynopsis"></p>
+      <div class="hero-actions">
+        <div class="hero-action" id="heroAction"><span class="ok-glyph">OK</span><span id="heroActionLabel"></span></div>
+        <div class="hero-action iplayer hidden" id="iplayerWrap"><span class="yellow-glyph"></span><span id="iplayerLabel">Watch on iPlayer</span></div>
+        <div class="hero-action quiet" id="playerHintWrap"><span class="blue-glyph"></span><span id="playerHint"></span></div>
+      </div>
+    </section>
+
+    <main class="rows-viewport">
+      <div class="rows" id="rows"></div>
+    </main>
+
+    <div class="overlay" id="signin" aria-hidden="true">
+      <div class="signin-card">
+        <div class="eyebrow">Connect SIMKL</div>
+        <div class="signin-step">On your phone or computer, go to</div>
+        <div class="signin-url" id="signinUrl">simkl.com/pin</div>
+        <div class="signin-step">and enter this code</div>
+        <div class="signin-code" id="signinCode">····-····</div>
+        <div class="signin-status" id="signinStatus">Waiting for you to approve…</div>
+        <div class="signin-hint">Back to cancel</div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" role="status"></div>
+  </div>
+
+  <script src="js/glasshouse-shim.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/mock-data.js"></script>
+  <script src="js/simkl.js"></script>
+  <script src="js/featured.js"></script>
+  <script src="js/sources.js"></script>
+  <script src="js/launch.js"></script>
+  <script src="js/iplayer.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -637,8 +637,23 @@
     if (covered) { rememberFocus(); stopClock(); }
     else { uncoveredAt = Date.now(); startClock(); refresh(); scanNext(); Featured.refresh(); }
   });
+  /* ---------- Keeping the lists fresh ---------- */
+  // Nuvio tells SIMKL what you watched a little after the fact, so on coming back
+  // the launcher asks SIMKL whether anything changed now, and a few times more
+  // over the next couple of minutes; then every 3 minutes while it's on screen.
+  var freshTimers = [];
+  function checkFresh() {
+    if (document.visibilityState === "hidden") return;
+    Sources.changed(function (yes) { hlog("fresh", { changed: yes }); if (yes) refresh(true); });
+  }
+  function onReturn() {
+    freshTimers.forEach(clearTimeout);
+    freshTimers = [1000, 20000, 60000, 150000].map(function (ms) { return setTimeout(checkFresh, ms); });
+  }
+  setInterval(checkFresh, 3 * 60 * 1000);
   document.addEventListener("visibilitychange", function () {
     hlog("visibility", { state: document.visibilityState });
+    if (document.visibilityState === "visible") onReturn();
   });
   // Glasshouse calls this when Home is pressed with the launcher on screen, and
   // when the launcher is opened again from an app. Coming back from an app keeps
@@ -647,7 +662,7 @@
     var returning = launchedAt > 0 || state.covered || Date.now() - uncoveredAt < 2500;
     launchedAt = 0;
     hlog("onHome", { covered: state.covered, sinceUncover: Date.now() - uncoveredAt, returning: returning, focus: focusNow() });
-    if (returning) restoreFocus(savedFocus() || focusNow());
+    if (returning) { restoreFocus(savedFocus() || focusNow()); onReturn(); }
     else goHome();
   });
   Glasshouse.onChanged(function () { refresh(); });

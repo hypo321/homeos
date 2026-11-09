@@ -118,6 +118,8 @@ window.Sources = (function () {
       playback.forEach(function (p) {
         var src = p.movie || p.show || p.anime;
         if (!src) return;
+        // 90% in is finished, as Nuvio counts it: the next episode takes over.
+        if ((p.progress || 0) >= 90) return;
         var it = baseItem(src, p.movie ? "movie" : p.anime ? "anime" : "tv");
         it.progress = Math.min(1, (p.progress || 0) / 100);
         it.state = "resume";
@@ -222,8 +224,10 @@ window.Sources = (function () {
     var cached = null;
     try { cached = JSON.parse(localStorage.getItem(MEDIA_KEY) || "null"); } catch (e) {}
     if (cached && cached.data) cb(null, cached.data);
-    fetchMedia().then(function (data) {
-      try { localStorage.setItem(MEDIA_KEY, JSON.stringify({ at: Date.now(), data: data })); } catch (e) {}
+    // The activity stamp is read before the lists it vouches for, and saved with them.
+    var stamp = null;
+    activity().then(function (a) { stamp = a; }, function () {}).then(fetchMedia).then(function (data) {
+      try { localStorage.setItem(MEDIA_KEY, JSON.stringify({ at: Date.now(), all: stamp, data: data })); } catch (e) {}
       cb(null, data);
     }).catch(function (err) {
       if (!Simkl.signedIn()) return cb(null, { connect: true, continueWatching: [], upNext: [], recommended: [] });
@@ -231,5 +235,19 @@ window.Sources = (function () {
     });
   }
 
-  return { apps: apps, media: media };
+  /* ---------- Has anything changed on SIMKL? ---------- */
+  // SIMKL's /sync/activities: one timestamp ("all") that moves whenever anything
+  // in the account does. The cheapest call in its API, made for polling.
+  function activity() {
+    return Simkl.get("/sync/activities", {}, true).then(function (a) { return (a && a.all) || null; });
+  }
+  // cb(true) when SIMKL has moved on since the lists on screen were fetched.
+  function changed(cb) {
+    if (!Simkl.configured() || !Simkl.signedIn()) return cb(false);
+    var cached = null;
+    try { cached = JSON.parse(localStorage.getItem(MEDIA_KEY) || "null"); } catch (e) {}
+    activity().then(function (now) { cb(!!now && (!cached || cached.all !== now)); }, function () { cb(false); });
+  }
+
+  return { apps: apps, media: media, changed: changed };
 })();

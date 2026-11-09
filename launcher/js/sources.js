@@ -163,14 +163,17 @@ window.Sources = (function () {
         cont.push(c.it);
       });
 
-      // Watchlist: plan to watch, newest added first.
+      // Watchlist: plan to watch, in a shuffled order that changes every few hours
+      // (steady in between, so it doesn't move while you browse). The whole list
+      // is shuffled, so titles from deep in it come round too.
       var next = [];
       var planned = [];
       ["movies", "shows", "anime"].forEach(function (k) {
         (plan[k] || []).forEach(function (w) { planned.push({ w: w, k: k }); });
       });
-      planned.sort(function (a, b) { return (a.w.added_to_watchlist_at || "") < (b.w.added_to_watchlist_at || "") ? 1 : -1; })
-        .forEach(function (x) {
+      planned.sort(function (a, b) { return (a.w.added_to_watchlist_at || "") < (b.w.added_to_watchlist_at || "") ? 1 : -1; });
+      shuffle(planned, shuffleBucket());
+      planned.forEach(function (x) {
           var src = x.w.movie || x.w.show || x.w.anime;
           var key = idKey(src && src.ids);
           if (!key || seen[key]) return;
@@ -227,12 +230,32 @@ window.Sources = (function () {
     // The activity stamp is read before the lists it vouches for, and saved with them.
     var stamp = null;
     activity().then(function (a) { stamp = a; }, function () {}).then(fetchMedia).then(function (data) {
-      try { localStorage.setItem(MEDIA_KEY, JSON.stringify({ at: Date.now(), all: stamp, data: data })); } catch (e) {}
+      try { localStorage.setItem(MEDIA_KEY, JSON.stringify({ at: Date.now(), all: stamp, bucket: shuffleBucket(), data: data })); } catch (e) {}
       cb(null, data);
     }).catch(function (err) {
       if (!Simkl.signedIn()) return cb(null, { connect: true, continueWatching: [], upNext: [], recommended: [] });
       if (!cached) cb(err, EMPTY);
     });
+  }
+
+  /* ---------- Watchlist shuffle ---------- */
+  var SHUFFLE_HOURS = 3;
+  function shuffleBucket() { return Math.floor(Date.now() / (SHUFFLE_HOURS * 3600 * 1000)); }
+  // Fisher-Yates with a small seeded generator (mulberry32): same seed, same order.
+  function shuffle(list, seed) {
+    var a = seed >>> 0;
+    var rand = function () {
+      a = (a + 0x6D2B79F5) >>> 0;
+      var t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    for (var i = list.length - 1; i > 0; i--) {
+      var j = Math.floor(rand() * (i + 1)), x = list[i];
+      list[i] = list[j]; list[j] = x;
+    }
+    return list;
   }
 
   /* ---------- Has anything changed on SIMKL? ---------- */
@@ -246,6 +269,8 @@ window.Sources = (function () {
     if (!Simkl.configured() || !Simkl.signedIn()) return cb(false);
     var cached = null;
     try { cached = JSON.parse(localStorage.getItem(MEDIA_KEY) || "null"); } catch (e) {}
+    // Time for a new Watchlist order counts as a change too.
+    if (cached && cached.bucket !== shuffleBucket()) return cb(true);
     activity().then(function (now) { cb(!!now && (!cached || cached.all !== now)); }, function () { cb(false); });
   }
 

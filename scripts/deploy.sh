@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 : "${GLASSHOUSE_URL:?set GLASSHOUSE_URL, e.g. http://192.168.1.50:8080}"
 mkdir -p dist
 rm -f dist/homeos-launcher.zip
-(cd launcher && zip -qr ../dist/homeos-launcher.zip index.html css js)
+(cd launcher && zip -qr ../dist/homeos-launcher.zip index.html css js fonts)
 key=""
 [ -n "${GLASSHOUSE_KEY:-}" ] && key="&k=$GLASSHOUSE_KEY"
 curl -sS --fail --max-time 60 -X POST "$GLASSHOUSE_URL/api/home/launcher/upload?name=homeos-launcher.zip$key" \

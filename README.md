@@ -35,7 +35,20 @@ python3 -m http.server 5173 --directory launcher
 ```
 
 Arrow keys move, Enter is OK, Backspace is Back, `b` and `y` stand in for the blue and yellow
-buttons, and `?many` in the address adds sample apps.
+buttons. In the address, `?mock` uses sample films and shows instead of SIMKL, and `?many` adds
+sample apps.
+
+Debugging on the TV: set `DEBUG_BEACON` in `launcher/js/config.js` to a URL on your computer (for
+example the dev server above, `http://<mac-ip>:5173/diag`). The launcher then reports focus and
+visibility events, and every 10 seconds its frame rate, slow frames and key-handling times, as
+requests in that server's log. Remove it again before committing.
+
+## Performance notes
+
+The C2 lays the page out at 1920x1080 but draws it at 4K (device pixel ratio 2). Measured on the
+TV: key handling is around 1 ms, idle is a steady 60 fps (backdrop drift included), and constant
+navigation drops a frame or two now and then as tiles and backdrops are redrawn at 4K. While an
+app is on top the launcher pauses everything (clock, drift, hero rotation, lookups).
 
 ## Deploy
 

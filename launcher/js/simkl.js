@@ -142,6 +142,23 @@ window.Simkl = (function () {
     return IMG + kind + "/" + path + size + ext + "&q=85";
   }
 
+  /* ---------- Tidy the detail cache ---------- */
+  // Details older than 30 days are dropped, once, a minute after start-up, so
+  // storage doesn't grow with every title ever shown.
+  setTimeout(function () {
+    try {
+      var drop = [];
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf(DETAIL_KEY) === 0) {
+          var v = load(k);
+          if (!v || Date.now() - v.at > 30 * 24 * 3600 * 1000) drop.push(k);
+        }
+      }
+      drop.forEach(function (k) { localStorage.removeItem(k); });
+    } catch (e) {}
+  }, 60000);
+
   return {
     configured: configured, signedIn: signedIn, signIn: signIn, signOut: signOut,
     get: get, detail: detail, pool: pool, image: image

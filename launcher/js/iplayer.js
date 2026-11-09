@@ -117,5 +117,20 @@ window.IPlayer = (function () {
       .then(function () { cb(null); }, function (err) { Glasshouse.open("app", APP, function () {}); cb(err); });
   }
 
+  // Old lookups are dropped once, a minute after start-up, so storage doesn't grow.
+  setTimeout(function () {
+    try {
+      var drop = [];
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (!k || k.indexOf(KEY) !== 0) continue;
+        var c = null;
+        try { c = JSON.parse(localStorage.getItem(k)); } catch (e) {}
+        if (!c || Date.now() - c.at > 2 * YES_TTL) drop.push(k);
+      }
+      drop.forEach(function (k) { localStorage.removeItem(k); });
+    } catch (e) {}
+  }, 60000);
+
   return { lookup: lookup, open: open, cached: cached, _resolve: resolve };
 })();

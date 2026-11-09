@@ -6,3 +6,5 @@ window.HOMEOS_CONFIG = {
   APP_NAME: "homeos",
   APP_VERSION: "0.2.0"
 };
+// Preview only: ?mock in the address uses the sample films and shows instead of SIMKL.
+if (/[?&]mock\b/.test(location.search)) window.HOMEOS_CONFIG.SIMKL_CLIENT_ID = "";

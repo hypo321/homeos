@@ -174,6 +174,9 @@ window.Featured = (function () {
   // The app's own cards when it has some, else trending shows from its network.
   function forApp(appId) { return (cards[appId] && cards[appId].length) ? cards[appId] : (byApp[appId] || []); }
 
-  refresh();
+  // The app cards are small and wanted soon; the trending lists are big (about
+  // 1.2 MB to parse) and only a fallback, so they wait until start-up has settled.
+  refreshCards();
+  setTimeout(refreshTrending, 8000);
   return { forApp: forApp, name: name, refresh: refresh, openCard: openCard };
 })();

@@ -4,6 +4,7 @@
   var $ = function (id) { return document.getElementById(id); };
 
   var state = { rows: [], r: 0, covered: false, lastKey: 0 };
+  var keyTimes = [];
   // Debug trail, only with DEBUG_BEACON set in config.js.
   var BEACON = (window.HOMEOS_CONFIG || {}).DEBUG_BEACON, t0 = Date.now();
   function hlog(what, data) {
@@ -11,7 +12,17 @@
     (new Image()).src = BEACON + "?ev=" + encodeURIComponent(what) + "&t=" + (Date.now() - t0) +
       "&d=" + encodeURIComponent(JSON.stringify(data || {})).slice(0, 600) + "&n=" + Math.random();
   }
-  hlog("load", { visible: document.visibilityState });
+  hlog("load", { visible: document.visibilityState, w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio, sw: screen.width, sh: screen.height });
+  // Debug only: smoothness report every 10 s (frames, slow frames over 34 ms, worst).
+  if (BEACON) (function () {
+    var last = 0, frames = 0, slow = 0, worst = 0, since = performance.now();
+    (function frame(t) {
+      if (last) { var gap = t - last; frames++; if (gap > 34) slow++; if (gap > worst) worst = gap; }
+      last = t;
+      if (t - since > 10000) { hlog("frames", { frames: frames, slow: slow, worst: Math.round(worst), keyMs: keyTimes.splice(0) }); frames = slow = worst = 0; since = t; }
+      requestAnimationFrame(frame);
+    })(0);
+  })();
   var els = {
     rows: $("rows"), hero: $("hero"), eyebrow: $("heroEyebrow"), title: $("heroTitle"),
     meta: $("heroMeta"), synopsis: $("heroSynopsis"), action: $("heroAction"),
@@ -146,6 +157,7 @@
     addRow("recommended", "Recommended for you", media.recommended);
     addRow("inputs", "Inputs", apps.inputs);
     state.r = 0;
+    measure();
     render(true);
     setTimeout(scanBadges, 1500);
   }
@@ -156,33 +168,59 @@
   // Rows where focus moves freely instead of staying at the left edge.
   var FREE_ROWS = { apps: true, inputs: true };
 
+  /* Positions are measured once, when rows are built or the screen resizes, so a
+     key press only writes classes and transforms: no layout is read while moving. */
+  var room = 0;
+  function measure() {
+    var rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    room = window.innerWidth - 2 * 6.5 * rem;
+    state.rows.forEach(function (rw) {
+      var first = rw.tiles[0];
+      rw.top = rw.el.offsetTop;
+      rw.left = rw.tiles.map(function (t) { return t.offsetLeft - first.offsetLeft; });
+      rw.width = rw.tiles.map(function (t) { return t.offsetWidth; });
+      rw.drawn = null;
+    });
+  }
+
   function render(immediate) {
     var row = state.rows[state.r];
     if (!row) return;
     state.rows.forEach(function (rw, ri) {
-      rw.el.classList.toggle("active", ri === state.r);
-      rw.el.classList.toggle("above", ri < state.r);
-      rw.el.classList.toggle("below", ri > state.r);
-      var first = rw.tiles[0], at = rw.tiles[rw.i];
-      if (!first || !at) return;
+      if (!rw.tiles.length) return;
       var offset;
+      var left = rw.left[rw.i] || 0, right = left + (rw.width[rw.i] || 0);
       if (FREE_ROWS[rw.id]) {
         // Focus moves across the screen; the row scrolls only once it reaches an edge.
-        var rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-        var room = window.innerWidth - 2 * 6.5 * rem;
-        var left = at.offsetLeft - first.offsetLeft, right = left + at.offsetWidth;
         offset = rw.offset || 0;
         if (right - offset > room) offset = right - room;
         if (left < offset) offset = left;
         rw.offset = offset;
-      } else offset = at.offsetLeft - first.offsetLeft;
-      rw.tiles.forEach(function (t, ti) {
-        t.classList.toggle("focus", ri === state.r && ti === rw.i);
-        t.classList.toggle("past", t.offsetLeft - first.offsetLeft < offset - 1);
-      });
-      rw.track.style.transform = "translateX(" + -offset + "px)";
+      } else offset = left;
+      var pos = ri === state.r ? "active" : ri < state.r ? "above" : "below";
+      var focusAt = ri === state.r ? rw.i : -1;
+      // Only rows whose look has changed are touched.
+      var d = rw.drawn;
+      if (d && d.pos === pos && d.focusAt === focusAt && d.offset === offset) return;
+      if (!d || d.pos !== pos) {
+        rw.el.classList.toggle("active", pos === "active");
+        rw.el.classList.toggle("above", pos === "above");
+        rw.el.classList.toggle("below", pos === "below");
+      }
+      if (!d || d.focusAt !== focusAt) {
+        if (d && d.focusAt >= 0 && rw.tiles[d.focusAt]) rw.tiles[d.focusAt].classList.remove("focus");
+        if (focusAt >= 0) rw.tiles[focusAt].classList.add("focus");
+      }
+      if (!d || d.offset !== offset) {
+        for (var ti = 0; ti < rw.tiles.length; ti++) {
+          var past = rw.left[ti] < offset - 1;
+          if (rw.tiles[ti].classList.contains("past") !== past) rw.tiles[ti].classList.toggle("past", past);
+        }
+        rw.track.style.transform = "translateX(" + -offset + "px)";
+      }
+      rw.drawn = { pos: pos, focusAt: focusAt, offset: offset };
     });
-    els.rows.style.transform = "translateY(" + -row.el.offsetTop + "px)";
+    els.rows.style.transform = "translateY(" + -row.top + "px)";
     showHero(current(), row.id, immediate);
   }
 
@@ -333,7 +371,7 @@
     clearTimeout(heroTimer);
 
     var apply = function () {
-      els.eyebrow.textContent = c.eyebrow;
+        els.eyebrow.textContent = c.eyebrow;
       els.title.textContent = c.title;
       els.title.classList.toggle("long", c.title.length > 16);
       els.meta.innerHTML = "";
@@ -605,6 +643,10 @@
 
   /* ---------- Keys ---------- */
   document.addEventListener("keydown", function (e) {
+    var t0k = performance.now();
+    try { onKey(e); } finally { if (BEACON) keyTimes.push(+(performance.now() - t0k).toFixed(1)); }
+  });
+  function onKey(e) {
     var now = Date.now();
     if (e.repeat && now - state.lastKey < 90) { e.preventDefault(); return; }
     state.lastKey = now;
@@ -627,16 +669,27 @@
       default: return;
     }
     e.preventDefault();
-  });
+  }
 
   /* ---------- Covered / home ---------- */
-  Glasshouse.onCovered(function (covered) {
+  // The launcher stays loaded behind every app, so while it's out of sight nothing
+  // runs: no clock, no backdrop drift, no hero rotation, no badge lookups. On this
+  // TV Glasshouse's onCovered doesn't fire, but the page's own visibility does.
+  function setCovered(covered) {
+    if (state.covered === covered) return;
     hlog("covered", { covered: covered, focus: focusNow() });
     state.covered = covered;
     document.body.classList.toggle("covered", covered);
-    if (covered) { rememberFocus(); stopClock(); }
-    else { uncoveredAt = Date.now(); startClock(); refresh(); scanNext(); Featured.refresh(); }
-  });
+    if (covered) {
+      rememberFocus(); stopClock();
+      clearInterval(featureTimer); featureTimer = null; heroApp = null;
+      clearTimeout(scanTimer);
+    } else {
+      uncoveredAt = Date.now(); startClock(); refresh(); scanNext(); Featured.refresh();
+      lastHeroKey = null; render(true);   // restarts the hero's rotation if an app is focused
+    }
+  }
+  Glasshouse.onCovered(setCovered);
   /* ---------- Keeping the lists fresh ---------- */
   // Nuvio tells SIMKL what you watched a little after the fact, so on coming back
   // the launcher asks SIMKL whether anything changed now, and a few times more
@@ -653,7 +706,9 @@
   setInterval(checkFresh, 3 * 60 * 1000);
   document.addEventListener("visibilitychange", function () {
     hlog("visibility", { state: document.visibilityState });
-    if (document.visibilityState === "visible") onReturn();
+    var hidden = document.visibilityState === "hidden";
+    setCovered(hidden);
+    if (!hidden) onReturn();
   });
   // Glasshouse calls this when Home is pressed with the launcher on screen, and
   // when the launcher is opened again from an app. Coming back from an app keeps
@@ -670,17 +725,21 @@
   var resizeTimer = null;
   window.addEventListener("resize", function () {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(function () { render(true); }, 100);
+    resizeTimer = setTimeout(function () { measure(); render(true); }, 100);
   });
 
   /* ---------- Load ---------- */
-  var lastRefresh = 0;
+  var lastRefresh = 0, builtSig = null;
   function refresh(force) {
     if (!force && Date.now() - lastRefresh < 5 * 60 * 1000) return;
     lastRefresh = Date.now();
     var media = null, apps = null;
     var maybeBuild = function () {
       if (!media || !apps) return;
+      // Same content as on screen: nothing to rebuild (most refreshes end here).
+      var sig = JSON.stringify([media, apps]);
+      if (sig === builtSig && state.rows.length) return;
+      builtSig = sig;
       // Focus stays on the same item; on the first build, where it was before a reload.
       var keep = state.rows.length ? focusNow() : savedFocus();
       hlog("build", { first: !state.rows.length, keep: keep });
@@ -696,6 +755,9 @@
     Sources.media(function (err, m) { media = m || { continueWatching: [], upNext: [], recommended: [] }; maybeBuild(); });
     Sources.apps(function (err, a) { apps = a || { favourites: [], others: [], inputs: [] }; maybeBuild(); });
   }
+
+  // Row heights depend on the font; measure again once it has loaded.
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { if (state.rows.length) { measure(); render(true); } });
 
   startClock();
   refresh(true);

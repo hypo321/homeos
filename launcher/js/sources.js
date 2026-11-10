@@ -83,6 +83,8 @@ window.Sources = (function () {
       item.synopsis = d.overview || "";
       item.genres = (d.genres || []).slice(0, 2);
       item.runtime = d.runtime;
+      item.network = d.network || null;
+      item.imdbRating = d.imdb || null;
       if (!item.imdb && d.ids) item.imdb = d.ids.imdb || null;
       if (!item.tmdb && d.ids) item.tmdb = d.ids.tmdb || null;
       if (!item.year) item.year = d.year;
@@ -93,6 +95,20 @@ window.Sources = (function () {
       : item.poster ? Simkl.image("posters", item.poster, "_w") : null;
     if (item.progress != null && !item.remaining) item.remaining = timeLeft(item.runtime, item.progress);
     return item;
+  }
+
+  function dressEpisode(item, e) {
+    if (!e) return;
+    if (e.title) item.episodeTitle = e.title;
+    if (e.runtime) {
+      item.epRuntime = e.runtime;
+      if (item.progress != null) item.remaining = timeLeft(e.runtime, item.progress);
+    }
+    if (e.overview) item.epSynopsis = e.overview;
+    if (e.finale) item.finale = e.finale;
+    // The card shows the episode's own still when SIMKL has one (new episodes
+    // often don't yet); the hero keeps the show's backdrop.
+    if (e.img) item.still = Simkl.image("episodes", e.img, "_w");
   }
 
   // keepOld: there are lists on screen worth keeping, so a partial answer
@@ -130,6 +146,7 @@ window.Sources = (function () {
         it.state = "resume";
         if (p.episode) {
           it.episode = "S" + p.episode.season + " E" + p.episode.number;
+          it.season = p.episode.season; it.number = p.episode.number;
           it.episodeTitle = p.episode.title || null;
         }
         var c = { it: it, at: when(p.paused_at) };
@@ -144,6 +161,8 @@ window.Sources = (function () {
         if (aired && aired > Date.now()) return;            // not out yet
         var it = baseItem(src, w.anime ? "anime" : "tv");
         it.episode = epLabel(w.next_to_watch);
+        var en = /^(?:S(\d+))?\s*E(\d+)$/i.exec(w.next_to_watch || "");
+        if (en) { it.season = en[1] ? +en[1] : null; it.number = +en[2]; }
         it.episodeTitle = info.title || null;
         it.state = aired && last && aired > last ? "new" : "next";
         // Part-way through this same episode: keep "resume", at the later of the two times.
@@ -195,6 +214,15 @@ window.Sources = (function () {
         return function () { return Simkl.detail(it.kindSimkl, it.simkl); };
       }), 4).then(function (details) {
         shown.forEach(function (it, i) { dress(it, details[i]); });
+        // The episode itself, for Continue watching: its real title, length and story.
+        var eps = cont.filter(function (it) { return it.number && it.kindSimkl !== "movie"; });
+        return Simkl.pool(eps.map(function (it) {
+          return function () { return Simkl.episode(it.kindSimkl, it.simkl, it.season, it.number); };
+        }), 4).then(function (er) {
+          eps.forEach(function (it, i) { dressEpisode(it, er[i]); });
+          return details;
+        });
+      }).then(function (details) {
 
         // Recommended: what SIMKL users pair with titles you're watching (up to six
         // from Continue watching; Watchlist titles only to make up the numbers).

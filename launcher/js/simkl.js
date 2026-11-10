@@ -6,6 +6,10 @@ window.Simkl = (function () {
   var TOKEN_KEY = "homeos.simkl.token";
   var DETAIL_KEY = "homeos.simkl.detail.";
   var DETAIL_TTL = 7 * 24 * 3600 * 1000;
+  // Details saved before this version lack the network and IMDb rating: fetch again.
+  var DETAIL_V = 2;
+  var EP_KEY = "homeos.simkl.ep.";
+  var EP_TTL = 24 * 3600 * 1000, EP_V = 2;
 
   function store(key, val) {
     try { if (val === null) localStorage.removeItem(key); else localStorage.setItem(key, JSON.stringify(val)); } catch (e) {}
@@ -104,10 +108,10 @@ window.Simkl = (function () {
   function detail(kind, simklId) {
     var key = DETAIL_KEY + kind + "." + simklId;
     var cached = load(key);
-    if (cached && Date.now() - cached.at < DETAIL_TTL) return Promise.resolve(cached.d);
+    if (cached && cached.v === DETAIL_V && Date.now() - cached.at < DETAIL_TTL) return Promise.resolve(cached.d);
     var path = kind === "movie" ? "/movies/" : kind === "anime" ? "/anime/" : "/tv/";
     return get(path + simklId, {}, false).then(function (d) {
-      if (d && !Array.isArray(d)) store(key, { at: Date.now(), d: slim(d) });
+      if (d && !Array.isArray(d)) store(key, { at: Date.now(), v: DETAIL_V, d: slim(d) });
       return slim(d);
     }).catch(function () { return cached ? cached.d : null; });
   }
@@ -115,11 +119,31 @@ window.Simkl = (function () {
     if (!d || Array.isArray(d)) return null;
     return {
       title: d.title, year: d.year, poster: d.poster, fanart: d.fanart, overview: d.overview,
-      genres: d.genres, runtime: d.runtime, ids: d.ids,
+      genres: d.genres, runtime: d.runtime, ids: d.ids, network: d.network || null,
+      imdb: (d.ratings && d.ratings.imdb && d.ratings.imdb.rating) || null,
       recs: (d.users_recommendations || []).slice(0, 8).map(function (r) {
         return { title: r.title, year: r.year, poster: r.poster, fanart: r.fanart, type: r.type, ids: r.ids };
       })
     };
+  }
+
+  /* ---------- One episode (cached a day) ---------- */
+  // SIMKL lists a show's episodes in one call; only the one asked for is kept.
+  // season may be null (anime counts episodes straight through).
+  function episode(kind, simklId, season, number) {
+    var key = EP_KEY + kind + "." + simklId + "." + (season || 0) + "." + number;
+    var cached = load(key);
+    if (cached && cached.v === EP_V && Date.now() - cached.at < EP_TTL) return Promise.resolve(cached.e);
+    return get((kind === "anime" ? "/anime/episodes/" : "/tv/episodes/") + simklId, {}, false).then(function (list) {
+      var hit = null;
+      (Array.isArray(list) ? list : []).forEach(function (e) {
+        if (!hit && e.type !== "special" && e.episode === number && (season == null || e.season === season)) hit = e;
+      });
+      var e = hit ? { title: hit.title || null, runtime: hit.runtime || null, overview: hit.description || null,
+        finale: hit.finale_type || null, img: hit.img || null } : null;
+      store(key, { at: Date.now(), v: EP_V, e: e });
+      return e;
+    }).catch(function () { return cached ? cached.e : null; });
   }
 
   // Run tasks with at most n at once.
@@ -150,9 +174,9 @@ window.Simkl = (function () {
       var drop = [];
       for (var i = 0; i < localStorage.length; i++) {
         var k = localStorage.key(i);
-        if (k && k.indexOf(DETAIL_KEY) === 0) {
-          var v = load(k);
-          if (!v || Date.now() - v.at > 30 * 24 * 3600 * 1000) drop.push(k);
+        if (k && (k.indexOf(DETAIL_KEY) === 0 || k.indexOf(EP_KEY) === 0)) {
+          var v = load(k), keep = k.indexOf(EP_KEY) === 0 ? 7 : 30;
+          if (!v || Date.now() - v.at > keep * 24 * 3600 * 1000) drop.push(k);
         }
       }
       drop.forEach(function (k) { localStorage.removeItem(k); });
@@ -161,6 +185,6 @@ window.Simkl = (function () {
 
   return {
     configured: configured, signedIn: signedIn, signIn: signIn, signOut: signOut,
-    get: get, detail: detail, pool: pool, image: image
+    get: get, detail: detail, episode: episode, pool: pool, image: image
   };
 })();

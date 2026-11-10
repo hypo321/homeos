@@ -82,14 +82,16 @@
       if (rowId === "continue" && (item.state === "new" || item.state === "next")) {
         var tag = document.createElement("div");
         tag.className = "tag" + (item.state === "new" ? " new" : "");
-        tag.textContent = item.state === "new" ? "New episode" : "Next up";
+        tag.textContent = item.state === "new" ? newLabel(item) : "Next up";
         art.appendChild(tag);
       }
+      // The S/E line sits in the label, above the title, so a title that
+      // wraps to two lines pushes it up rather than covering it.
       if (rowId === "continue" && item.episode) {
         var ep = document.createElement("div");
         ep.className = "ep";
         ep.textContent = item.episode;
-        art.appendChild(ep);
+        label.insertBefore(ep, label.firstChild);
       }
       if (rowId === "continue" && item.progress) {
         t.classList.add("has-progress");
@@ -305,22 +307,75 @@
   }
 
   /* ---------- Hero ---------- */
+  // A new first episode starts a season (or a whole new show).
+  function newLabel(item) {
+    if (item.number === 1) return item.season > 1 ? "New season" : "New show";
+    return "New episode";
+  }
+  // SIMKL's finale_type: 1 mid-season, 2 season, 3 the whole show.
+  function finaleLabel(f) {
+    return f === 3 ? "Series finale" : f === 2 ? "Season finale" : f === 1 ? "Mid-season finale" : null;
+  }
+  // Placeholder titles ("Episode 1") say nothing the S/E number doesn't.
+  function realTitle(t) {
+    return t && !/^(episode|ep\.?|chapter|part)\s*\d+$/i.test(t.trim()) ? t : null;
+  }
+  function runtimeText(m) {
+    if (!m) return null;
+    return m < 60 ? m + "m" : Math.floor(m / 60) + "h" + (m % 60 ? " " + (m % 60) + "m" : "");
+  }
+
+  // Where a show is from: a white logo from img/networks (sources in its
+  // README), or the network's name when there's no logo for it. "tall" marks
+  // the squarer logos, which are drawn a little taller to look the same size.
+  var NETWORK_LOGOS = [
+    { net: /^Netflix$/i, logo: "netflix" },
+    { net: /^BBC\b/i, logo: "bbc" },
+    { net: /^(Channel 4|E4|More4|Film4)$/i, logo: "channel4", tall: true },
+    { net: /^ITV/i, logo: "itvx" },
+    { net: /^Disney\+$/i, logo: "disneyplus", tall: true },
+    { net: /^(Prime Video|Amazon( Prime Video| Freevee)?)$/i, logo: "primevideo", tall: true },
+    { net: /^Apple TV\+?$/i, logo: "appletv" },
+    { net: /^HBO$/i, logo: "hbo" },
+    { net: /^(HBO )?Max$/i, logo: "hbomax" },
+    { net: /^Hulu$/i, logo: "hulu" },
+    { net: /^Paramount\+$/i, logo: "paramountplus", tall: true },
+    { net: /^NBC$/i, logo: "nbc", tall: true },
+    { net: /^Sky\b/i, logo: "sky", tall: true },
+    { net: /^YouTube/i, logo: "youtube", tall: true },
+    { net: /^MUBI$/i, logo: "mubi", tall: true },
+    { net: /^Crunchyroll$/i, logo: "crunchyroll", tall: true },
+    { net: /^Starz$/i, logo: "starz" },
+    { net: /^Showtime$/i, logo: "showtime", tall: true }
+  ];
+  function networkLogo(name) {
+    for (var i = 0; i < NETWORK_LOGOS.length; i++) if (NETWORK_LOGOS[i].net.test(name)) return NETWORK_LOGOS[i];
+    return null;
+  }
+
   var heroTimer = null, lastHeroKey = null;
   function heroContent(item, rowId) {
     if (item.kind === "media") {
       var eyebrow, action;
       if (rowId === "continue") {
-        var lead = item.state === "new" ? "New episode" : item.state === "next" ? "Next up" : "Continue watching";
-        eyebrow = [lead, item.episode, item.state === "resume" ? item.remaining : null].filter(Boolean).join("  ·  ");
+        var lead = item.state === "new" ? newLabel(item) : item.state === "next" ? "Next up" : "Continue watching";
+        eyebrow = [lead, finaleLabel(item.finale), item.state === "resume" ? item.remaining : null].filter(Boolean).join("  ·  ");
         var verb = item.state === "resume" || !item.state ? "Resume in " : "Play in ";
         action = Launch.player().titles ? verb + Launch.player().name : "Open " + Launch.player().name;
       } else {
         eyebrow = item.note || (rowId === "upnext" ? upNextTitle() : "Recommended");
         action = Launch.player().titles ? "Play in " + Launch.player().name : "Open " + Launch.player().name;
       }
-      var meta = [item.year ? String(item.year) : null, item.type === "movie" ? "Film" : "Series"].concat(item.genres || []).filter(Boolean);
-      if (item.episodeTitle) meta.unshift(item.episode + " · " + item.episodeTitle);
-      return { eyebrow: eyebrow, title: item.title, meta: meta, synopsis: item.synopsis, action: action };
+      // Network · S3 E1 Title · 1h 5m · IMDb 7.8 · genres. An episode's own
+      // line leaves out the show's start year and "Series", which it makes plain.
+      var ep = rowId === "continue" && item.episode;
+      var meta = [item.network ? { network: item.network } : null];
+      if (ep) meta.push({ episode: item.episode, title: realTitle(item.episodeTitle) });
+      else meta.push(item.year ? String(item.year) : null, item.type === "movie" ? "Film" : "Series");
+      meta.push(runtimeText(ep ? item.epRuntime || item.runtime : item.runtime));
+      if (item.imdbRating) meta.push({ imdb: item.imdbRating });
+      meta = meta.concat(item.genres || []).filter(Boolean);
+      return { eyebrow: eyebrow, title: item.title, meta: meta, synopsis: (ep && item.epSynopsis) || item.synopsis, action: action };
     }
     if (item.kind === "connect") {
       return { eyebrow: "SIMKL", title: "Bring in your films and shows", meta: [],
@@ -362,6 +417,34 @@
     }, 9000);
   }
 
+  function metaPart(m) {
+    var s = document.createElement("span");
+    if (typeof m === "string") { s.textContent = m; return s; }
+    if (m.network) {
+      s.className = "net";
+      var logo = networkLogo(m.network);
+      var mark = function () { s.className = "net text"; s.textContent = m.network; };
+      if (logo) {
+        if (logo.tall) s.className += " tall";
+        var img = document.createElement("img");
+        img.alt = m.network;
+        img.onerror = mark;
+        img.src = "img/networks/" + logo.logo + ".svg";
+        s.appendChild(img);
+      } else mark();
+    } else if (m.episode) {
+      s.textContent = m.episode;
+      if (m.title) { var t = document.createElement("b"); t.textContent = m.title; s.appendChild(t); }
+    } else if (m.imdb) {
+      s.className = "imdb";
+      var chip = document.createElement("i");
+      chip.textContent = "IMDb";
+      s.appendChild(chip);
+      s.appendChild(document.createTextNode((+m.imdb).toFixed(1)));
+    }
+    return s;
+  }
+
   /* The hero's text and backdrop change together: the new picture is loaded and
      decoded first, then the old text fades out while the picture crossfades, and
      the new text fades in. A picture that is slow to arrive (over 1.5 s) lets the
@@ -383,7 +466,7 @@
       els.title.textContent = c.title;
       els.title.classList.toggle("long", c.title.length > 16);
       els.meta.innerHTML = "";
-      c.meta.forEach(function (m) { var s = document.createElement("span"); s.textContent = m; els.meta.appendChild(s); });
+      c.meta.forEach(function (m) { els.meta.appendChild(metaPart(m)); });
       els.synopsis.textContent = c.synopsis || "";
       els.actionLabel.textContent = c.action;
       playerHint();

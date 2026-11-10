@@ -254,7 +254,19 @@ body {
 }
 .tile .tag.new { background: #2f62e8; }
 .tile.media .ep {
-  position: absolute; left: 1rem; bottom: 2.5rem; font-size: 0.85rem; font-weight: 600; letter-spacing: 0.04em;
-  color: var(--ink-2); text-shadow: 0 0.05rem 0.2rem rgba(0,0,0,0.85);
+  margin-bottom: 0.25rem; font-size: 0.85rem; font-weight: 600; letter-spacing: 0.04em;
+  color: var(--ink-2);
 }
-.tile.media.has-progress .ep { bottom: 2.9rem; }
+
+/* Hero meta: network, episode, runtime, IMDb */
+.hero-meta { align-items: center; }
+.hero-meta span { display: inline-flex; align-items: center; }
+.hero-meta b { font-weight: 500; color: var(--ink); margin-left: 0.6rem; }
+/* Logos are black SVGs drawn white; wordmarks 1.3rem tall, squarer marks 1.9rem. */
+.hero-meta .net img { height: 1.3rem; width: auto; display: block; filter: brightness(0) invert(1); opacity: 0.92; }
+.hero-meta .net.tall img { height: 1.9rem; }
+.hero-meta .net.text { font-weight: 600; color: var(--ink); }
+.hero-meta .imdb i {
+  font-style: normal; font-weight: 800; font-size: 0.85rem; letter-spacing: 0.02em;
+  background: #f5c518; color: #000; padding: 0.12rem 0.35rem; border-radius: 0.25rem; margin-right: 0.45rem;
+}

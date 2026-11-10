@@ -22,9 +22,10 @@ It listens on `127.0.0.1:8097` only (not reachable from the network) and only ac
   changes it.
 
 **Start with Nuvio:** the helper follows the TV's power state (`tvpower/power/getPowerState`, subscribed).
-When the TV comes on from standby (Suspend or Active Standby to Active), or has just started, it waits
-for Home and then opens the chosen app, but only if Home is on screen: not when the TV came on into an
-app or input, and not when just the screen was off and on.
+When the TV comes on from standby (Suspend or Active Standby to Active), or has just started, and
+`power/getPowerOnReason` says it was switched on by hand (`remoteKey` or `localKey`, not an HDMI
+device over CEC, a cast or a timer), it waits for Home and then opens the chosen app, but only if Home
+is on screen: not when the TV came on into an app or input, and not when just the screen was off and on.
 
 Log: `/tmp/homeos-nuvio-link.log`.
 

@@ -54,9 +54,9 @@ function luna(uri, payload, cb) {
   });
 }
 /* ---------- Start with Nuvio ---------- */
-// When the TV comes on from standby (or starts up) on the Home screen, open the
-// chosen Nuvio. Not when it came on into an app or input, and not when only the
-// screen was off.
+// When the TV is switched on with the remote (or its own button) from standby,
+// or starts up, onto the Home screen, open the chosen Nuvio. Not when it came on
+// into an app or input, was woken by another device, or only the screen was off.
 var SETTINGS = "/var/lib/homeos/settings.json";
 var START_APPS = [NUVIO, "space.nuvio.native.legacy"];
 var HOMES = ["com.webos.app.home", "com.tvweb.dashboard"];
@@ -77,14 +77,22 @@ function onPowerState(state) {
   // just this helper: restarting it on a TV that's on must not open anything).
   var poweredOn = was ? !!OFF_STATES[was] : os.uptime() < 180;
   if (!poweredOn || !settings.startApp) return;
-  log("power " + (was || "boot") + " -> Active");
-  // Give Home a moment to come up (much longer after a cold start), then open
-  // the app only if Home is what's on screen.
+  // Only when someone switched it on (the remote, or the TV's own button), not
+  // an HDMI device over CEC, a cast, a timer or LG's overnight updates.
+  luna("luna://com.webos.service.tvpower/power/getPowerOnReason", {}, function (r) {
+    log("power " + (was || "boot") + " -> Active, reason " + r.reason);
+    if (BY_HAND.indexOf(r.reason) >= 0) startAppSoon(!was);
+  });
+}
+var BY_HAND = ["remoteKey", "localKey"];
+// Give Home a moment to come up (much longer after a cold start), then open
+// the app only if Home is what's on screen.
+function startAppSoon(coldBoot) {
   var tries = 0;
   setTimeout(function check() {
     luna("luna://com.webos.applicationManager/getForegroundAppInfo", {}, function (r) {
       if (powerState !== "Active") return;
-      if (HOMES.indexOf(r.appId) < 0 && ++tries < (was ? 3 : 15)) return setTimeout(check, 3000);
+      if (HOMES.indexOf(r.appId) < 0 && ++tries < (coldBoot ? 15 : 3)) return setTimeout(check, 3000);
       if (HOMES.indexOf(r.appId) < 0) return log("start skipped, on " + r.appId);
       luna("luna://com.webos.applicationManager/launch", { id: settings.startApp }, function (l) {
         log("start " + settings.startApp + " -> " + (l.returnValue ? "ok" : "failed"));

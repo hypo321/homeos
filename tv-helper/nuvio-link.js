@@ -6,12 +6,17 @@
  * apps with links of exactly those shapes, or a card one of the TV's apps is
  * publishing for LG's Home right now (with that card's own launch parameters).
  *
+ * It can also open Nuvio when the TV is switched on (a setting the launcher changes).
+ *
  * Install: /var/lib/homeos/nuvio-link.js, started by /var/lib/webosbrew/init.d/60-homeos.
  * Remove:  delete both, then reboot (or kill the node process).
  */
 var http = require("http");
 var crypto = require("crypto");
+var fs = require("fs");
+var os = require("os");
 var execFile = require("child_process").execFile;
+var spawn = require("child_process").spawn;
 
 var PORT = 8097;
 var NUVIO = "space.nuvio.webos";
@@ -48,6 +53,70 @@ function luna(uri, payload, cb) {
     cb(r);
   });
 }
+/* ---------- Start with Nuvio ---------- */
+// When the TV comes on from standby (or starts up) on the Home screen, open the
+// chosen Nuvio. Not when it came on into an app or input, and not when only the
+// screen was off.
+var SETTINGS = "/var/lib/homeos/settings.json";
+var START_APPS = [NUVIO, "space.nuvio.native.legacy"];
+var HOMES = ["com.webos.app.home", "com.tvweb.dashboard"];
+var settings = { startApp: null };
+try { settings = JSON.parse(fs.readFileSync(SETTINGS, "utf8")) || settings; } catch (e) {}
+function saveSettings() {
+  try { fs.writeFileSync(SETTINGS + ".tmp", JSON.stringify(settings)); fs.renameSync(SETTINGS + ".tmp", SETTINGS); } catch (e) {}
+}
+function log(s) { console.log(new Date().toISOString() + " " + s); }
+
+var OFF_STATES = { "Suspend": 1, "Active Standby": 1, "Power Off": 1, "Init": 1 };
+var powerState = null;
+function onPowerState(state) {
+  var was = powerState;
+  powerState = state;
+  if (state !== "Active" || was === "Active") return;
+  // From standby, or the first report just after the TV itself started (not
+  // just this helper: restarting it on a TV that's on must not open anything).
+  var poweredOn = was ? !!OFF_STATES[was] : os.uptime() < 180;
+  if (!poweredOn || !settings.startApp) return;
+  log("power " + (was || "boot") + " -> Active");
+  // Give Home a moment to come up (much longer after a cold start), then open
+  // the app only if Home is what's on screen.
+  var tries = 0;
+  setTimeout(function check() {
+    luna("luna://com.webos.applicationManager/getForegroundAppInfo", {}, function (r) {
+      if (powerState !== "Active") return;
+      if (HOMES.indexOf(r.appId) < 0 && ++tries < (was ? 3 : 15)) return setTimeout(check, 3000);
+      if (HOMES.indexOf(r.appId) < 0) return log("start skipped, on " + r.appId);
+      luna("luna://com.webos.applicationManager/launch", { id: settings.startApp }, function (l) {
+        log("start " + settings.startApp + " -> " + (l.returnValue ? "ok" : "failed"));
+      });
+    });
+  }, 2500);
+}
+// A long-lived subscription; luna-send -i prints one JSON line per change.
+function watchPower() {
+  var p = spawn("/usr/bin/luna-send", ["-i", "luna://com.webos.service.tvpower/power/getPowerState", '{"subscribe":true}']);
+  var buf = "";
+  p.stdout.on("data", function (d) {
+    buf += d;
+    var lines = buf.split("\n");
+    buf = lines.pop();
+    lines.forEach(function (l) {
+      var r = null;
+      try { r = JSON.parse(l); } catch (e) {}
+      if (r && r.state) onPowerState(r.state);
+    });
+  });
+  p.on("exit", function () { if (watcher === p) setTimeout(watchPower, 10000); });
+  p.on("error", function () {});
+  watcher = p;
+}
+var watcher = null;
+// Don't leave the subscription behind when the helper is stopped.
+["SIGTERM", "SIGINT"].forEach(function (sig) {
+  process.on(sig, function () { if (watcher) { var w = watcher; watcher = null; w.kill(); } process.exit(0); });
+});
+watchPower();
+
 var ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 var last = 0;
 
@@ -68,6 +137,20 @@ function reply(req, res, code, body) {
 http.createServer(function (req, res) {
   if (req.method === "OPTIONS") return reply(req, res, 204);
   if (req.method === "GET" && req.url === "/health") return reply(req, res, 200, { ok: true, apps: [NUVIO, IPLAYER] });
+  if (req.method === "GET" && req.url === "/settings") return reply(req, res, 200, { ok: true, startApp: settings.startApp || null });
+  if (req.method === "POST" && req.url === "/settings") {
+    var sdata = "";
+    req.on("data", function (c) { sdata += c; if (sdata.length > 512) req.destroy(); });
+    return req.on("end", function () {
+      var b = {};
+      try { b = JSON.parse(sdata) || {}; } catch (e) {}
+      if (b.startApp !== null && START_APPS.indexOf(b.startApp) < 0) return reply(req, res, 400, { ok: false, error: "bad app" });
+      settings.startApp = b.startApp;
+      saveSettings();
+      log("startApp " + settings.startApp);
+      reply(req, res, 200, { ok: true, startApp: settings.startApp });
+    });
+  }
   if (req.method !== "POST" || req.url !== "/open") return reply(req, res, 404, { ok: false, error: "not found" });
 
   var data = "";

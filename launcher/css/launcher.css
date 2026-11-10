@@ -223,6 +223,7 @@ body {
 .hero-actions .hero-action { margin-top: 0; }
 .hero-action.quiet { color: var(--ink-3); font-weight: 400; font-size: 1.1rem; }
 .blue-glyph { width: 1.1rem; height: 1.1rem; border-radius: 50%; background: #3d7bd9; display: inline-block; }
+.red-glyph { width: 1.1rem; height: 1.1rem; border-radius: 50%; background: #d9443d; display: inline-block; }
 .yellow-glyph { width: 1.1rem; height: 1.1rem; border-radius: 50%; background: #e8c13a; display: inline-block; }
 .hero-action.iplayer { font-size: 1.15rem; }
 

@@ -14,6 +14,9 @@ built around what you actually watch.
   exact episode (matched through the BBC's iBL catalogue).
 - Full-screen backdrops with smooth crossfades, a time-of-day tint, and focus kept when you come
   back from an app.
+- **Start with Nuvio** (optional): red on a Nuvio app makes the TV open it when switched on.
+- Copes with no network (just woken from standby, before the Wi-Fi is back): the lists on screen
+  stay, and SIMKL is asked again when the network returns, backing off from 5 s to 5 minutes.
 
 Built for an LG C2 on webOS 24 (Chromium 108), so modern JavaScript and CSS are fine.
 
@@ -23,7 +26,7 @@ Built for an LG C2 on webOS 24 (Chromium 108), so modern JavaScript and CSS are 
 |---|---|
 | `launcher/` | The launcher: a web page Glasshouse serves as the TV's Home |
 | `launcher/js/config.js` | SIMKL client id (public; a "TV, devices & command line" app has no secret) |
-| `tv-helper/` | A small service on the TV that opens titles in Nuvio and iPlayer, and app cards with their full launch parameters, which webOS won't let the launcher page do. See its README. |
+| `tv-helper/` | A small service on the TV that opens titles in Nuvio and iPlayer, and app cards with their full launch parameters, which webOS won't let the launcher page do; it also opens Nuvio at power-on when asked. See its README. |
 | `scripts/deploy.sh` | Builds the launcher and uploads it to Glasshouse |
 
 ## Develop
@@ -34,8 +37,8 @@ Open the launcher in a browser with sample data:
 python3 -m http.server 5173 --directory launcher
 ```
 
-Arrow keys move, Enter is OK, Backspace is Back, `b` and `y` stand in for the blue and yellow
-buttons. In the address, `?mock` uses sample films and shows instead of SIMKL, and `?many` adds
+Arrow keys move, Enter is OK, Backspace is Back, `r`, `b` and `y` stand in for the red, blue and
+yellow buttons. In the address, `?mock` uses sample films and shows instead of SIMKL, and `?many` adds
 sample apps.
 
 Debugging on the TV: set `DEBUG_BEACON` in `launcher/js/config.js` to a URL on your computer (for

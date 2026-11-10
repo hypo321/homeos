@@ -95,14 +95,19 @@ window.Sources = (function () {
     return item;
   }
 
-  function fetchMedia() {
-    var safe = function (p) { return p.catch(function () { return null; }); };
+  // keepOld: there are lists on screen worth keeping, so a partial answer
+  // (some requests failed) is an error rather than lists with gaps in them.
+  function fetchMedia(keepOld) {
+    // A request that fails counts; a list that's empty doesn't.
+    var failed = 0;
+    var safe = function (p) { return p.catch(function () { failed++; return null; }); };
     return Promise.all([
       safe(Simkl.get("/sync/playback", {}, true)),
       safe(Simkl.get("/sync/all-items/shows/watching", { next_watch_info: "yes" }, true)),
       safe(Simkl.get("/sync/all-items/anime/watching", { next_watch_info: "yes" }, true)),
       safe(Simkl.get("/sync/all-items/all/plantowatch", {}, true))
     ]).then(function (res) {
+      if (failed === res.length || (failed && keepOld)) throw new Error(failed === res.length ? "offline" : "partial");
       var playback = res[0] || [], watchingShows = (res[1] && res[1].shows) || [],
         watchingAnime = (res[2] && res[2].anime) || [], plan = res[3] || {};
       var seen = {};
@@ -226,21 +231,26 @@ window.Sources = (function () {
     });
   }
 
-  // Calls cb with what is cached at once, then again with fresh data.
+  // Calls cb(null, lists, true) with what is cached at once, then cb(null, lists)
+  // with fresh data, or cb(err, lists or null) when SIMKL couldn't be reached.
   function media(cb) {
     if (!Simkl.configured()) return setTimeout(function () { cb(null, window.HOMEOS_MOCK); }, 0);
     if (!Simkl.signedIn()) return setTimeout(function () { cb(null, { connect: true, continueWatching: [], upNext: [], recommended: [] }); }, 0);
     var cached = null;
     try { cached = JSON.parse(localStorage.getItem(MEDIA_KEY) || "null"); } catch (e) {}
-    if (cached && cached.data) cb(null, cached.data);
+    if (cached && cached.data) cb(null, cached.data, true);
+    // Fresh lists, or cb(err) and what's on screen stays. Offline (just woken from
+    // standby, Wi-Fi not back yet) there's no point asking.
+    var keepOld = !!(cached && cached.data && (cached.data.continueWatching.length || cached.data.upNext.length));
+    if (navigator.onLine === false) return setTimeout(function () { cb(new Error("offline"), keepOld ? null : EMPTY); }, 0);
     // The activity stamp is read before the lists it vouches for, and saved with them.
     var stamp = null;
-    activity().then(function (a) { stamp = a; }, function () {}).then(fetchMedia).then(function (data) {
+    activity().then(function (a) { stamp = a; }, function () {}).then(function () { return fetchMedia(keepOld); }).then(function (data) {
       try { localStorage.setItem(MEDIA_KEY, JSON.stringify({ at: Date.now(), all: stamp, bucket: shuffleBucket(), data: data })); } catch (e) {}
       cb(null, data);
     }).catch(function (err) {
       if (!Simkl.signedIn()) return cb(null, { connect: true, continueWatching: [], upNext: [], recommended: [] });
-      if (!cached) cb(err, EMPTY);
+      cb(err, keepOld ? null : EMPTY);
     });
   }
 

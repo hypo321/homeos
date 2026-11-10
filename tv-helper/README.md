@@ -17,6 +17,15 @@ It listens on `127.0.0.1:8097` only (not reachable from the network) and only ac
   The app is closed, then launched with the card's own `launchParam` (Freeview Play apps need its
   `contentType: application/vnd.dvb.ait+xml`), or `{contentTarget}` when the card has none.
 
+- `GET /settings`, `POST /settings {"startApp":"space.nuvio.webos"|"space.nuvio.native.legacy"|null}` →
+  **Start with Nuvio**, saved in `/var/lib/homeos/settings.json`. The launcher's red button on a Nuvio app
+  changes it.
+
+**Start with Nuvio:** the helper follows the TV's power state (`tvpower/power/getPowerState`, subscribed).
+When the TV comes on from standby (Suspend or Active Standby to Active), or has just started, it waits
+for Home and then opens the chosen app, but only if Home is on screen: not when the TV came on into an
+app or input, and not when just the screen was off and on.
+
 Log: `/tmp/homeos-nuvio-link.log`.
 
 ## Install / update

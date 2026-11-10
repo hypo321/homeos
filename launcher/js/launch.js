@@ -23,6 +23,8 @@ window.Launch = (function () {
     var at = PLAYERS.indexOf(player());
     var p = PLAYERS[(at + 1) % PLAYERS.length];
     try { localStorage.setItem(PLAYER_KEY, p.key); } catch (e) {}
+    // The TV starts in whichever Nuvio titles open in.
+    if (startApp && startApp !== p.id && !Glasshouse.preview) setStartsWith(p.id);
     return p;
   }
 
@@ -73,6 +75,22 @@ window.Launch = (function () {
     });
   }
 
+  /* Start with Nuvio: the helper opens the chosen app when the TV is switched on. */
+  var startApp = null, startKnown = false;
+  function helperSettings(body, cb) {
+    var opts = body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {};
+    fetch(HELPER + "/settings", opts).then(function (r) { return r.json(); }).then(function (j) {
+      if (!j || !j.ok) throw new Error((j && j.error) || "helper refused");
+      startApp = j.startApp || null; startKnown = true;
+      if (cb) cb(null, startApp);
+    }).catch(function (e) { if (cb) cb(e); });
+  }
+  function startsWith() { return startKnown ? startApp : undefined; }
+  function setStartsWith(appId, cb) { helperSettings({ startApp: appId }, cb); }
+  function isPlayerApp(id) { return PLAYERS.some(function (p) { return p.id === id; }); }
+  if (!Glasshouse.preview) setTimeout(function () { helperSettings(null); }, 2000);
+  else { startKnown = true; }
+
   function app(item, cb) { Glasshouse.open("app", item.id, cb); }
   function input(item, cb) { Glasshouse.open("input", item.id, cb); }
 
@@ -84,5 +102,6 @@ window.Launch = (function () {
     }, 1500);
   }
 
-  return { media: media, app: app, input: input, nuvioLink: nuvioLink, player: player, nextPlayer: nextPlayer, openNuvio: openNuvio };
+  return { media: media, app: app, input: input, nuvioLink: nuvioLink, player: player, nextPlayer: nextPlayer, openNuvio: openNuvio,
+    startsWith: startsWith, setStartsWith: setStartsWith, isPlayerApp: isPlayerApp };
 })();

@@ -1,6 +1,6 @@
 /* HomeOS launcher: rows, focus, hero, backdrop, clock. */
 (function () {
-  var KEY = { LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, OK: 13, BACK: 461, BACKSPACE: 8, ESC: 27, BLUE: 406, B: 66, YELLOW: 405, Y: 89 };
+  var KEY = { LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, OK: 13, BACK: 461, BACKSPACE: 8, ESC: 27, BLUE: 406, B: 66, RED: 403, R: 82, YELLOW: 405, Y: 89 };
   var $ = function (id) { return document.getElementById(id); };
 
   var state = { rows: [], r: 0, covered: false, lastKey: 0 };
@@ -516,7 +516,29 @@
     lastHeroKey = null;
     render(true);
   }
+  /* ---------- Start with Nuvio (red button, on a Nuvio app) ---------- */
+  var previewStart = null;
+  function startState() { return Glasshouse.preview ? previewStart : Launch.startsWith(); }
+  function startHint() {
+    var item = current(), on = startState();
+    var show = !!(item && item.kind === "app" && Launch.isPlayerApp(item.id) && on !== undefined);
+    if (show) $("startLabel").textContent = on === item.id ? "TV starts in " + item.title + ": on" : "Start the TV in " + item.title;
+    $("startWrap").classList.toggle("hidden", !show);
+  }
+  function toggleStart() {
+    var item = current();
+    if (!item || item.kind !== "app" || !Launch.isPlayerApp(item.id) || startState() === undefined) return;
+    var next = startState() === item.id ? null : item.id;
+    var done = function (err) {
+      if (err) return toast("Couldn't change that: the HomeOS helper isn't answering");
+      toast(next ? "The TV will start in " + item.title : "The TV will start on Home");
+      startHint();
+    };
+    if (Glasshouse.preview) { previewStart = next; return done(null); }
+    Launch.setStartsWith(next, done);
+  }
   function playerHint() {
+    startHint();
     var row = state.rows[state.r], item = current();
     var show = item && item.kind === "media";
     els.hint.textContent = show ? "Switch to " + (Launch.player().key === "nuvio" ? "Nuvio Legacy" : "Nuvio TV") : "";
@@ -664,6 +686,7 @@
       case KEY.DOWN: move(1, 0); break;
       case KEY.OK: activate(); break;
       case KEY.BLUE: case KEY.B: switchPlayer(); break;
+      case KEY.RED: case KEY.R: toggleStart(); break;
       case KEY.YELLOW: case KEY.Y: watchOnIPlayer(); break;
       case KEY.BACK: case KEY.BACKSPACE: case KEY.ESC: goHome(); break;
       default: return;
@@ -685,7 +708,7 @@
       clearInterval(featureTimer); featureTimer = null; heroApp = null;
       clearTimeout(scanTimer);
     } else {
-      uncoveredAt = Date.now(); startClock(); refresh(); scanNext(); Featured.refresh();
+      uncoveredAt = Date.now(); startClock(); refresh(net.down); scanNext(); Featured.refresh();
       lastHeroKey = null; render(true);   // restarts the hero's rotation if an app is focused
     }
   }
@@ -696,7 +719,7 @@
   // over the next couple of minutes; then every 3 minutes while it's on screen.
   var freshTimers = [];
   function checkFresh() {
-    if (document.visibilityState === "hidden") return;
+    if (document.visibilityState === "hidden" || net.down) return;
     Sources.changed(function (yes) { hlog("fresh", { changed: yes }); if (yes) refresh(true); });
   }
   function onReturn() {
@@ -728,6 +751,40 @@
     resizeTimer = setTimeout(function () { measure(); render(true); }, 100);
   });
 
+  /* ---------- When SIMKL can't be reached ---------- */
+  // Typically the first seconds after waking from standby, before the Wi-Fi is
+  // back. The lists on screen stay, and SIMKL is asked again when the TV says the
+  // network is back, or after a calm backoff (5 s doubling to 5 min) while the
+  // launcher is on screen. Pictures that couldn't load are fetched again then.
+  var net = { down: false, tries: 0, timer: null };
+  function netFailed(err) {
+    hlog("netFailed", { err: err && err.message, tries: net.tries });
+    net.down = true;
+    clearTimeout(net.timer);
+    var ms = Math.min(5000 * Math.pow(2, net.tries++), 300000);
+    net.timer = setTimeout(netRetry, ms);
+  }
+  function netRetry() {
+    clearTimeout(net.timer); net.timer = null;
+    if (!net.down) return;
+    if (state.covered) return;   // tried again on return (setCovered)
+    refresh(true);
+  }
+  function netOk() {
+    if (!net.down) return;
+    hlog("netOk", { tries: net.tries });
+    net.down = false; net.tries = 0;
+    clearTimeout(net.timer); net.timer = null;
+    // Tile pictures that failed: set them again (loaded ones come from the cache).
+    var arts = Array.prototype.filter.call(document.querySelectorAll(".tile.media .art"), function (a) { return a.style.backgroundImage; });
+    var bgs = arts.map(function (a) { var bg = a.style.backgroundImage; a.style.backgroundImage = "none"; return bg; });
+    if (arts.length) getComputedStyle(arts[0]).backgroundImage;   // one style pass sees them cleared
+    arts.forEach(function (a, i) { a.style.backgroundImage = bgs[i]; });
+    if (bdShown === "error") { lastHeroKey = null; render(true); }
+    Featured.refresh();
+  }
+  window.addEventListener("online", function () { if (net.down) { net.tries = 0; netRetry(); } });
+
   /* ---------- Load ---------- */
   var lastRefresh = 0, builtSig = null;
   function refresh(force) {
@@ -752,7 +809,11 @@
       });
       if (!restoreFocus(keep)) render(true);
     };
-    Sources.media(function (err, m) { media = m || { continueWatching: [], upNext: [], recommended: [] }; maybeBuild(); });
+    Sources.media(function (err, m, fromCache) {
+      if (err) netFailed(err); else if (!fromCache) netOk();
+      if (!m) return;   // a failed fetch: what's on screen stays
+      media = m; maybeBuild();
+    });
     Sources.apps(function (err, a) { apps = a || { favourites: [], others: [], inputs: [] }; maybeBuild(); });
   }
 

@@ -108,6 +108,14 @@
       var isApp = item.kind === "app";
       t.className = "tile app" + (isApp ? " icon" : " input");
       art.style.backgroundColor = item.color;
+      if (isApp) {
+        t.dataset.app = item.id;
+        if (item.id === startState()) t.classList.add("starts");
+        var power = document.createElement("div");
+        power.className = "power";
+        power.innerHTML = POWER_SVG;
+        art.appendChild(power);
+      }
       var monogram = function () {
         var mono = document.createElement("div");
         mono.className = "monogram";
@@ -516,29 +524,33 @@
     lastHeroKey = null;
     render(true);
   }
-  /* ---------- Start with Nuvio (red button, on a Nuvio app) ---------- */
+  /* ---------- Start-up app (red button, on an app) ---------- */
+  // Red on an app makes it the one the TV opens when switched on (the HomeOS
+  // helper does the opening); red on it again turns that off. The chosen app
+  // wears a small power decal.
+  var POWER_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/></svg>';
   var previewStart = null;
   function startState() { return Glasshouse.preview ? previewStart : Launch.startsWith(); }
-  function startHint() {
-    var item = current(), on = startState();
-    var show = !!(item && item.kind === "app" && Launch.isPlayerApp(item.id) && on !== undefined);
-    if (show) $("startLabel").textContent = on === item.id ? "TV starts in " + item.title + ": on" : "Start the TV in " + item.title;
-    $("startWrap").classList.toggle("hidden", !show);
+  function markStartApp() {
+    var on = startState();
+    Array.prototype.forEach.call(document.querySelectorAll(".tile.app.icon"), function (t) {
+      t.classList.toggle("starts", !!on && t.dataset.app === on);
+    });
   }
+  Launch.onStartApp(markStartApp);
   function toggleStart() {
     var item = current();
-    if (!item || item.kind !== "app" || !Launch.isPlayerApp(item.id) || startState() === undefined) return;
+    if (!item || item.kind !== "app" || startState() === undefined) return;
     var next = startState() === item.id ? null : item.id;
     var done = function (err) {
       if (err) return toast("Couldn't change that: the HomeOS helper isn't answering");
-      toast(next ? "The TV will start in " + item.title : "The TV will start on Home");
-      startHint();
+      toast(next ? item.title + " will open automatically when the TV starts" : "Automatic app opening disabled");
+      markStartApp();
     };
     if (Glasshouse.preview) { previewStart = next; return done(null); }
     Launch.setStartsWith(next, done);
   }
   function playerHint() {
-    startHint();
     var row = state.rows[state.r], item = current();
     var show = item && item.kind === "media";
     els.hint.textContent = show ? "Switch to " + (Launch.player().key === "nuvio" ? "Nuvio Legacy" : "Nuvio TV") : "";

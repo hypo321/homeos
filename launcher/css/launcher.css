@@ -181,6 +181,13 @@ body {
 .tile.app.icon .art::after { border-radius: 1.7rem; }
 .tile.app.icon.focus .art::after { box-shadow: inset 0 0 0 0.2rem var(--ink); }
 .tile.app.icon .monogram { font-size: 2.4rem; font-weight: 600; letter-spacing: 0; padding: 0; }
+/* The app the TV opens when switched on: a small power decal, bottom left. */
+.tile .power {
+  position: absolute; z-index: 1; left: 0.5rem; bottom: 0.5rem; width: 1.9rem; height: 1.9rem; border-radius: 50%;
+  background: rgba(10, 9, 8, 0.72); color: var(--ink); display: none; align-items: center; justify-content: center;
+}
+.tile .power svg { width: 1.1rem; height: 1.1rem; display: block; }
+.tile.starts .power { display: flex; }
 .tile.app .art { display: flex; align-items: center; justify-content: center; background: #1d1a18; }
 .tile.app .art img { max-width: 52%; max-height: 52%; object-fit: contain; }
 .tile.app .monogram { font-size: 1.6rem; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); text-align: center; padding: 0 1rem; }
@@ -223,7 +230,6 @@ body {
 .hero-actions .hero-action { margin-top: 0; }
 .hero-action.quiet { color: var(--ink-3); font-weight: 400; font-size: 1.1rem; }
 .blue-glyph { width: 1.1rem; height: 1.1rem; border-radius: 50%; background: #3d7bd9; display: inline-block; }
-.red-glyph { width: 1.1rem; height: 1.1rem; border-radius: 50%; background: #d9443d; display: inline-block; }
 .yellow-glyph { width: 1.1rem; height: 1.1rem; border-radius: 50%; background: #e8c13a; display: inline-block; }
 .hero-action.iplayer { font-size: 1.15rem; }
 

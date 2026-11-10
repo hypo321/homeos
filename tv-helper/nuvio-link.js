@@ -6,7 +6,7 @@
  * apps with links of exactly those shapes, or a card one of the TV's apps is
  * publishing for LG's Home right now (with that card's own launch parameters).
  *
- * It can also open Nuvio when the TV is switched on (a setting the launcher changes).
+ * It can also open an app when the TV is switched on (a setting the launcher changes).
  *
  * Install: /var/lib/homeos/nuvio-link.js, started by /var/lib/webosbrew/init.d/60-homeos.
  * Remove:  delete both, then reboot (or kill the node process).
@@ -53,12 +53,13 @@ function luna(uri, payload, cb) {
     cb(r);
   });
 }
-/* ---------- Start with Nuvio ---------- */
+/* ---------- Start-up app ---------- */
 // When the TV is switched on with the remote (or its own button) from standby,
-// or starts up, onto the Home screen, open the chosen Nuvio. Not when it came on
+// or starts up, onto the Home screen, open the chosen app. Not when it came on
 // into an app or input, was woken by another device, or only the screen was off.
 var SETTINGS = "/var/lib/homeos/settings.json";
-var START_APPS = [NUVIO, "space.nuvio.native.legacy"];
+// Any installed app (the launcher's red button picks it); webOS app ids look like this.
+var APP_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{2,99}$/;
 var HOMES = ["com.webos.app.home", "com.tvweb.dashboard"];
 var settings = { startApp: null };
 try { settings = JSON.parse(fs.readFileSync(SETTINGS, "utf8")) || settings; } catch (e) {}
@@ -152,7 +153,7 @@ http.createServer(function (req, res) {
     return req.on("end", function () {
       var b = {};
       try { b = JSON.parse(sdata) || {}; } catch (e) {}
-      if (b.startApp !== null && START_APPS.indexOf(b.startApp) < 0) return reply(req, res, 400, { ok: false, error: "bad app" });
+      if (b.startApp !== null && (typeof b.startApp !== "string" || !APP_ID.test(b.startApp))) return reply(req, res, 400, { ok: false, error: "bad app" });
       settings.startApp = b.startApp;
       saveSettings();
       log("startApp " + settings.startApp);

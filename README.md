@@ -14,7 +14,8 @@ built around what you actually watch.
   exact episode (matched through the BBC's iBL catalogue).
 - Full-screen backdrops with smooth crossfades, a time-of-day tint, and focus kept when you come
   back from an app.
-- **Start with Nuvio** (optional): red on a Nuvio app makes the TV open it when switched on.
+- **Start-up app** (optional): red on an app icon makes the TV open that app when switched on with
+  the remote; it wears a small power decal. Red on it again turns this off.
 - Copes with no network (just woken from standby, before the Wi-Fi is back): the lists on screen
   stay, and SIMKL is asked again when the network returns, backing off from 5 s to 5 minutes.
 

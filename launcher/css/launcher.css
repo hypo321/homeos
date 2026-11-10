@@ -32,7 +32,6 @@ body {
   color: var(--ink);
   font-family: "Inter", "LG Smart UI", system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
-  cursor: none;
 }
 
 #stage { position: fixed; inset: 0; overflow: hidden; }
@@ -121,7 +120,7 @@ body {
 .rows-viewport { position: absolute; left: 0; right: 0; top: 41.5rem; bottom: 0; }
 .rows { transition: transform var(--move) var(--ease); will-change: transform; }
 .row {
-  padding-bottom: 2.6rem;
+  position: relative; padding-bottom: 2.6rem;
   transition: opacity var(--move) ease;
 }
 .row.above { opacity: 0; }
@@ -270,3 +269,21 @@ body {
   font-style: normal; font-weight: 800; font-size: 0.85rem; letter-spacing: 0.02em;
   background: #f5c518; color: #000; padding: 0.12rem 0.35rem; border-radius: 0.25rem; margin-right: 0.45rem;
 }
+
+/* The Magic Remote's pointer: arrows at a row's ends while it's on the row and
+   there's more that way (resting there glides the row). Pointer events pass
+   through, so the tiles under them can still be pointed at. */
+.row .edge {
+  position: absolute; top: 2.5rem; bottom: 2.6rem; width: 9rem; opacity: 0; pointer-events: none;
+  transition: opacity 250ms ease; z-index: 3;
+}
+.row .edge.l { left: 0; background: linear-gradient(90deg, rgba(0,0,0,0.7), rgba(0,0,0,0)); }
+.row .edge.r { right: 0; background: linear-gradient(270deg, rgba(0,0,0,0.7), rgba(0,0,0,0)); }
+.row .edge::after {
+  content: ""; position: absolute; top: 50%; width: 1.4rem; height: 1.4rem; margin-top: -0.7rem;
+  border: solid var(--ink); border-width: 0 0 0.22rem 0.22rem;
+}
+.row .edge.l::after { left: 2.6rem; transform: rotate(45deg); }
+.row .edge.r::after { right: 2.6rem; transform: rotate(-135deg); }
+.row.more-l .edge.l, .row.more-r .edge.r { opacity: 1; }
+.hero-action { cursor: pointer; }

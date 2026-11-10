@@ -3,7 +3,7 @@
   var KEY = { LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, OK: 13, BACK: 461, BACKSPACE: 8, ESC: 27, BLUE: 406, B: 66, RED: 403, R: 82, YELLOW: 405, Y: 89 };
   var $ = function (id) { return document.getElementById(id); };
 
-  var state = { rows: [], r: 0, covered: false, lastKey: 0 };
+  var state = { rows: [], r: 0, top: 0, covered: false, lastKey: 0 };
   var keyTimes = [];
   // Debug trail, only with DEBUG_BEACON set in config.js.
   var BEACON = (window.HOMEOS_CONFIG || {}).DEBUG_BEACON, t0 = Date.now();
@@ -150,13 +150,26 @@
     h.textContent = title;
     var track = document.createElement("div");
     track.className = "track";
-    var tiles = items.map(function (it) { var t = tileFor(it, id); track.appendChild(t); return t; });
+    var at = state.rows.length;
+    var tiles = items.map(function (it, i) {
+      var t = tileFor(it, id);
+      t.hosRow = at; t.hosI = i;   // for the pointer: which tile this is
+      track.appendChild(t);
+      return t;
+    });
     rowEl.appendChild(h); rowEl.appendChild(track);
+    // Arrows at a row's ends while the pointer is on it and there's more that way.
+    ["l", "r"].forEach(function (side) {
+      var edge = document.createElement("div");
+      edge.className = "edge " + side;
+      rowEl.appendChild(edge);
+    });
     els.rows.appendChild(rowEl);
     state.rows.push({ id: id, items: items, el: rowEl, titleEl: h, track: track, tiles: tiles, i: 0 });
   }
 
   function build(media, apps) {
+    pointerDone();
     els.rows.innerHTML = "";
     state.rows = [];
     lastHeroKey = null;
@@ -193,21 +206,35 @@
     });
   }
 
+  // A tile scrolled off a row's start fades out only once it's wholly off the
+  // screen (the row starts a gutter in from the edge), so one cut off at the
+  // edge still shows.
+  function isPast(rw, ti, offset) {
+    return rw.left[ti] + rw.width[ti] <= offset - 6.5 * window.innerWidth / 120;
+  }
+
   function render(immediate) {
     var row = state.rows[state.r];
     if (!row) return;
+    // With the keys, the focused row is the top one. With the pointer, the
+    // view stays where the wheel put it, and each row where it was scrolled.
+    if (!ptr.on) state.top = state.r;
+    var top = state.rows[state.top] || row;
     state.rows.forEach(function (rw, ri) {
       if (!rw.tiles.length) return;
       var offset;
       var left = rw.left[rw.i] || 0, right = left + (rw.width[rw.i] || 0);
-      if (FREE_ROWS[rw.id]) {
+      if (ptr.on) {
+        offset = rw.offset || 0;
+      } else if (FREE_ROWS[rw.id]) {
         // Focus moves across the screen; the row scrolls only once it reaches an edge.
         offset = rw.offset || 0;
         if (right - offset > room) offset = right - room;
         if (left < offset) offset = left;
         rw.offset = offset;
       } else offset = left;
-      var pos = ri === state.r ? "active" : ri < state.r ? "above" : "below";
+      rw.offset = offset;
+      var pos = ri === state.r ? "active" : ri < state.top ? "above" : "below";
       var focusAt = ri === state.r ? rw.i : -1;
       // Only rows whose look has changed are touched.
       var d = rw.drawn;
@@ -223,15 +250,15 @@
       }
       if (!d || d.offset !== offset) {
         for (var ti = 0; ti < rw.tiles.length; ti++) {
-          var past = rw.left[ti] < offset - 1;
+          var past = isPast(rw, ti, offset);
           if (rw.tiles[ti].classList.contains("past") !== past) rw.tiles[ti].classList.toggle("past", past);
         }
         rw.track.style.transform = "translateX(" + -offset + "px)";
       }
       rw.drawn = { pos: pos, focusAt: focusAt, offset: offset };
     });
-    els.rows.style.transform = "translateY(" + -row.top + "px)";
-    showHero(current(), row.id, immediate);
+    els.rows.style.transform = "translateY(" + -top.top + "px)";
+    if (!(hold && hold.held)) showHero(current(), row.id, immediate);
   }
 
   function move(dr, di) {
@@ -287,6 +314,7 @@
   function restoreFocus(f) {
     hlog("restore", f);
     if (!f) return false;
+    pointerDone();
     for (var r = 0; r < state.rows.length; r++) {
       if (state.rows[r].id !== f.row) continue;
       var items = state.rows[r].items, at = 0;
@@ -300,6 +328,7 @@
 
   function goHome() {
     hlog("goHome", focusNow());
+    pointerDone();
     try { localStorage.removeItem(FOCUS_KEY); } catch (e) {}
     state.rows.forEach(function (r) { r.i = 0; r.offset = 0; });
     state.r = 0;
@@ -763,20 +792,63 @@
     var t0k = performance.now();
     try { onKey(e); } finally { if (BEACON) keyTimes.push(+(performance.now() - t0k).toFixed(1)); }
   });
+  /* Holding left or right speeds up. The TV repeats a held key after about
+     half a second, then every ~50 ms (measured on this C2). Steps start at
+     most every HOLD_GAP ms, as before, and the gap closes to every repeat by
+     HOLD_FAST. Meanwhile the place the hold should have reached follows an
+     ease-in curve from where it began to the row's end, arriving by
+     HOLD_TO_END however long the row is; each step jumps there if it's
+     further than one tile. The hero waits until the key is let go. */
+  var HOLD_EASE = 500;     // ms: when the TV starts repeating a held key
+  var HOLD_GAP = 100;      // ms between steps as the repeats begin
+  var HOLD_FAST = 1200;    // ms held by when every repeat steps
+  var HOLD_TO_END = 2000;  // ms held to arrive at the row's end
+  var HOLD_CURVE = 2;      // 1 even speed; higher starts slower, finishes faster
+  var hold = null;
+  function sideways(e, dir, now) {
+    var row = state.rows[state.r];
+    if (!e.repeat || !hold || hold.dir !== dir || hold.r !== state.r || !row) {
+      hold = { dir: dir, r: state.r, from: row ? row.i : 0, at: now, step: now, held: false };
+      return move(0, dir);
+    }
+    var t = now - hold.at;
+    var gap = HOLD_GAP * Math.max(0, Math.min(1, (HOLD_FAST - t) / (HOLD_FAST - HOLD_EASE)));
+    if (now - hold.step < gap) return;
+    var end = dir > 0 ? row.items.length - 1 : 0;
+    var f = Math.max(0, Math.min(1, (now - hold.at - HOLD_EASE) / (HOLD_TO_END - HOLD_EASE)));
+    var want = hold.from + Math.round((end - hold.from) * Math.pow(f, HOLD_CURVE));
+    var next = dir > 0 ? Math.max(row.i + 1, want) : Math.min(row.i - 1, want);
+    next = Math.max(0, Math.min(row.items.length - 1, next));
+    if (next === row.i) return;
+    row.i = next;
+    hold.step = now;
+    hold.held = true;
+    render(false);
+  }
+  document.addEventListener("keyup", function (e) {
+    if (e.keyCode !== KEY.LEFT && e.keyCode !== KEY.RIGHT) return;
+    var was = hold;
+    hold = null;
+    if (was && was.held && state.rows[state.r]) showHero(current(), state.rows[state.r].id, false);
+  });
+
   function onKey(e) {
     var now = Date.now();
-    if (e.repeat && now - state.lastKey < 90) { e.preventDefault(); return; }
+    // Held left/right is paced by sideways(); other held keys step at most every 90 ms.
+    var side = e.keyCode === KEY.LEFT || e.keyCode === KEY.RIGHT;
+    if (e.repeat && !side && now - state.lastKey < 90) { e.preventDefault(); return; }
     state.lastKey = now;
     state.lastWasRepeat = !!e.repeat;
     launchedAt = 0;
+    pointerDone();
     if (signin) {
       if (e.keyCode === KEY.BACK || e.keyCode === KEY.BACKSPACE || e.keyCode === KEY.ESC) closeSignIn();
       e.preventDefault();
       return;
     }
     switch (e.keyCode) {
-      case KEY.LEFT: move(0, -1); break;
-      case KEY.RIGHT: move(0, 1); break;
+      case KEY.LEFT: sideways(e, -1, now); break;
+      case KEY.RIGHT: sideways(e, 1, now); break;
       case KEY.UP: move(-1, 0); break;
       case KEY.DOWN: move(1, 0); break;
       case KEY.OK: activate(); break;
@@ -788,6 +860,173 @@
     }
     e.preventDefault();
   }
+
+  /* ---------- The Magic Remote's pointer ----------
+     Following Glasshouse's own Home: pointing at a tile focuses it (and the
+     hero follows) without moving anything, so the row can't slide away from
+     the pointer and hand the focus to the next tile. A click opens it, as OK
+     does. The wheel scrolls the rows up and down a row a notch. Resting the
+     pointer at either end of a row glides it that way, faster the further out
+     it points, as LG's Home does. A key press hands back to the keys: focus
+     carries on from the tile pointed at. */
+  var ptr = { on: false, x: 0, y: 0, hoverTimer: null, glide: null, raf: 0, last: 0, lastHover: 0, wheelAt: 0, edgeRow: -1 };
+  var EDGE = 9;          // rem from the screen's side where a row glides
+  var GLIDE_MAX = 85;    // rem a second, pointing at the very edge
+  function rem() { return window.innerWidth / 120; }
+
+  // The keys (or a rebuild, or Home) take over: rows go back to following focus.
+  function pointerDone() {
+    clearTimeout(ptr.hoverTimer);
+    stopGlide();
+    showEdges(-1);
+    ptr.on = false;
+  }
+  function tileOf(el) {
+    while (el && el !== document.body) {
+      if (el.hosRow !== undefined) return el;
+      el = el.parentNode;
+    }
+    return null;
+  }
+  // Focus the tile under the pointer, leaving every row where it is.
+  function hoverAt(el) {
+    var t = tileOf(el);
+    // Tiles scrolled off a row's start are faded out ("past"): not pointable.
+    if (!t || signin || t.classList.contains("past")) return;
+    var rw = state.rows[t.hosRow];
+    if (!rw || t.hosRow < state.top || (t.hosRow === state.r && rw.i === t.hosI)) return;
+    state.r = t.hosRow;
+    rw.i = t.hosI;
+    render(false);
+  }
+  function onPointerMove(e) {
+    if (state.covered) return;
+    ptr.x = e.clientX; ptr.y = e.clientY;
+    if (!ptr.on) { ptr.on = true; state.top = state.r; }
+    // A short rest before focusing, so sweeping across tiles doesn't flick the hero through each.
+    clearTimeout(ptr.hoverTimer);
+    var target = e.target;
+    ptr.hoverTimer = setTimeout(function () { hoverAt(target); }, 70);
+    aim();
+  }
+
+  // The row under the pointer, if any (rows scrolled above are out of play).
+  function rowAtPointer() {
+    for (var ri = state.top; ri < state.rows.length; ri++) {
+      var b = state.rows[ri].track.getBoundingClientRect();
+      if (ptr.y >= b.top && ptr.y <= b.bottom) return ri;
+    }
+    return -1;
+  }
+  function maxOffset(rw) {
+    var n = rw.tiles.length;
+    return n ? Math.max(0, rw.left[n - 1] + rw.width[n - 1] - room) : 0;
+  }
+  // Is the pointer resting on a row's end, with more of the row that way?
+  function aim() {
+    var ri = rowAtPointer(), zone = EDGE * rem(), g = null;
+    if (ri >= 0) {
+      var rw = state.rows[ri], off = rw.offset || 0;
+      var inL = (zone - ptr.x) / zone, inR = (ptr.x - (window.innerWidth - zone)) / zone;
+      if (inL > 0 && off > 0) g = { r: ri, dir: -1, depth: Math.min(1, inL) };
+      else if (inR > 0 && off < maxOffset(rw)) g = { r: ri, dir: 1, depth: Math.min(1, inR) };
+    }
+    showEdges(ri);
+    ptr.glide = g;
+    if (g && !ptr.raf) { ptr.last = 0; ptr.raf = requestAnimationFrame(glideFrame); }
+  }
+  function glideFrame(now) {
+    ptr.raf = 0;
+    var g = ptr.glide;
+    if (!g || state.covered) return stopGlide();
+    var rw = state.rows[g.r];
+    if (!rw) return stopGlide();
+    var dt = ptr.last ? Math.min(0.05, (now - ptr.last) / 1000) : 0;
+    ptr.last = now;
+    var was = rw.offset || 0;
+    var off = Math.max(0, Math.min(maxOffset(rw), was + g.dir * GLIDE_MAX * rem() * Math.pow(g.depth, 1.5) * dt));
+    if (off !== was) {
+      if (!rw.gliding) { rw.gliding = true; rw.track.style.transition = "none"; }
+      rw.offset = off;
+      rw.track.style.transform = "translateX(" + -off + "px)";
+      for (var ti = 0; ti < rw.tiles.length; ti++) {
+        var past = isPast(rw, ti, off);
+        if (rw.tiles[ti].classList.contains("past") !== past) rw.tiles[ti].classList.toggle("past", past);
+      }
+      if (rw.drawn) rw.drawn.offset = off;
+      // The tile under a still pointer changes as the row glides past it.
+      if (now - ptr.lastHover > 150) { ptr.lastHover = now; hoverAt(document.elementFromPoint(ptr.x, ptr.y)); }
+    }
+    if (off === was && dt) { aim(); if (!ptr.glide) return stopGlide(); }
+    ptr.raf = requestAnimationFrame(glideFrame);
+  }
+  function stopGlide() {
+    if (ptr.raf) cancelAnimationFrame(ptr.raf);
+    ptr.raf = 0; ptr.glide = null;
+    state.rows.forEach(function (rw) {
+      if (rw.gliding) { rw.gliding = false; rw.track.style.transition = ""; }
+    });
+  }
+  function showEdges(ri) {
+    if (ri === ptr.edgeRow && ri < 0) return;
+    ptr.edgeRow = ri;
+    state.rows.forEach(function (rw, i) {
+      var on = ptr.on && i === ri, off = rw.offset || 0;
+      rw.el.classList.toggle("more-l", on && off > 0);
+      rw.el.classList.toggle("more-r", on && off < maxOffset(rw));
+    });
+  }
+
+  // The wheel: a row up or down a notch. The magic remote sends one event a
+  // notch; a trackpad sends a stream, so steps are kept apart.
+  function onWheel(e) {
+    e.preventDefault();
+    if (state.covered || signin || !state.rows.length) return;
+    var d = e.deltaY !== undefined ? e.deltaY : -e.wheelDelta;
+    var now = Date.now();
+    if (!d || now - ptr.wheelAt < 160) return;
+    ptr.wheelAt = now;
+    if (!ptr.on) { ptr.on = true; state.top = state.r; }
+    var top = Math.max(0, Math.min(state.rows.length - 1, state.top + (d > 0 ? 1 : -1)));
+    if (top === state.top) return;
+    stopGlide();
+    state.top = top;
+    if (state.r < top) state.r = top;
+    render(false);
+    // Once the rows have moved, focus what's now under the pointer.
+    setTimeout(function () { if (ptr.on) { hoverAt(document.elementFromPoint(ptr.x, ptr.y)); aim(); } }, 360);
+  }
+
+  function onClick(e) {
+    if (signin || state.covered) return;
+    var el = e.target;
+    while (el && el !== document.body) {
+      if (el.id === "heroAction") return activate();
+      if (el.id === "iplayerWrap") return watchOnIPlayer();
+      if (el.id === "playerHintWrap") return switchPlayer();
+      el = el.parentNode;
+    }
+    var t = tileOf(e.target);
+    if (!t) return;
+    clearTimeout(ptr.hoverTimer);
+    // The tile clicked: a glide may have moved it under the pointer since focus last followed.
+    if (t.hosRow >= state.top) {
+      state.r = t.hosRow; state.rows[t.hosRow].i = t.hosI;
+      render(false);
+      activate();
+    }
+  }
+
+  document.addEventListener("mousemove", onPointerMove);
+  document.addEventListener("onwheel" in document ? "wheel" : "mousewheel", onWheel, { passive: false });
+  document.addEventListener("click", onClick);
+  // webOS hides the pointer after a few still seconds or a key press: the
+  // glide stops and the arrows go, but the rows stay where they are.
+  function pointerHidden() { stopGlide(); showEdges(-1); }
+  document.addEventListener("cursorStateChange", function (e) {
+    if (!(e.detail && e.detail.visibility)) pointerHidden();
+  });
+  document.addEventListener("mouseout", function (e) { if (!e.relatedTarget) pointerHidden(); });
 
   /* ---------- Covered / home ---------- */
   // The launcher stays loaded behind every app, so while it's out of sight nothing

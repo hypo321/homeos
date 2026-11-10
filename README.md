@@ -54,6 +54,14 @@ TV: key handling is around 1 ms, idle is a steady 60 fps (backdrop drift include
 navigation drops a frame or two now and then as tiles and backdrops are redrawn at 4K. While an
 app is on top the launcher pauses everything (clock, drift, hero rotation, lookups).
 
+## Screenshots
+
+```sh
+TV_HOST=<tv-ip> scripts/screenshot.sh [name]
+```
+
+Captures the TV's screen (1920x1080) into `screenshots/`, which git ignores. Needs root ssh to the TV.
+
 ## Deploy
 
 ```sh
